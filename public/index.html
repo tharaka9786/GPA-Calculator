@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Calculate your university GPA instantly. Enter your grades and credits from your result sheet to get your Grade Point Average." />
+  <title>GPA Calculator — University Grade Point Average</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <!-- Animated background orbs -->
+  <div class="bg-orbs" aria-hidden="true">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+    <div class="orb orb-4"></div>
+  </div>
+
+  <div class="container">
+    <!-- Auth Nav -->
+    <div class="auth-nav" id="auth-nav" style="text-align: right; margin-bottom: 20px;">
+      <!-- Injected by JS -->
+    </div>
+
+    <!-- Hero Header -->
+    <header class="hero" id="hero">
+      <div class="hero-badge">🎓 University Tool</div>
+      <h1 class="hero-title">GPA <span class="gradient-text">Calculator</span></h1>
+      <p class="hero-subtitle">Calculate your Grade Point Average instantly.<br />Select your grades and credits from your result sheet.</p>
+    </header>
+
+    <!-- Main Calculator Card -->
+    <main class="calculator-card glass-card" id="calculator">
+      <div class="card-header">
+        <h2 class="card-title">
+          <span class="card-icon">📚</span> Your Courses
+        </h2>
+        <button class="btn btn-add" id="btn-add-course" type="button">
+          <span class="btn-icon">+</span> Add Course
+        </button>
+      </div>
+
+      <!-- Course Table Header -->
+      <div class="course-table-header">
+        <span class="col col-num">#</span>
+        <span class="col col-code">Code</span>
+        <span class="col col-name">Course Name</span>
+        <span class="col col-grade">Grade</span>
+        <span class="col col-credits">Credits</span>
+        <span class="col col-gpv">GPV</span>
+        <span class="col col-action"></span>
+      </div>
+
+      <!-- Course Rows Container -->
+      <div class="course-rows" id="course-rows">
+        <!-- Rows are injected by JS -->
+      </div>
+
+      <!-- Calculate Button -->
+      <button class="btn btn-calculate" id="btn-calculate" type="button">
+        <span class="btn-label">Calculate GPA</span>
+        <span class="btn-loader" id="btn-loader"></span>
+      </button>
+
+      <!-- Error message -->
+      <div class="error-message" id="error-message"></div>
+    </main>
+
+    <!-- Results Card (hidden by default) -->
+    <section class="results-card glass-card hidden" id="results-card">
+      <h2 class="results-title">Your Result</h2>
+
+      <div class="gpa-display" id="gpa-display">
+        <div class="gpa-ring" id="gpa-ring">
+          <svg viewBox="0 0 200 200" class="gpa-svg">
+            <circle cx="100" cy="100" r="88" class="gpa-ring-bg" />
+            <circle cx="100" cy="100" r="88" class="gpa-ring-fill" id="gpa-ring-fill" />
+          </svg>
+          <div class="gpa-value-wrapper">
+            <span class="gpa-value" id="gpa-value">0.00</span>
+            <span class="gpa-label">GPA</span>
+          </div>
+        </div>
+        <div class="gpa-class" id="gpa-class"></div>
+        <div class="gpa-pending-note hidden" id="gpa-pending-note"></div>
+      </div>
+
+      <!-- Breakdown Table -->
+      <div class="breakdown-section">
+        <h3 class="breakdown-title">📊 Course Breakdown</h3>
+        <div class="breakdown-table" id="breakdown-table">
+          <!-- Injected by JS -->
+        </div>
+        <div class="breakdown-summary" id="breakdown-summary"></div>
+        <div style="text-align: center; margin-top: 24px;">
+          <button class="btn btn-calculate hidden" id="btn-save-result" type="button" style="margin: 0 auto; max-width: 250px;">
+            <span class="btn-label">Save Result</span>
+            <span class="btn-loader" id="save-loader"></span>
+          </button>
+          <div id="save-message" style="margin-top: 10px; font-size: 0.9rem;"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Grading System Reference -->
+    <section class="grading-card glass-card" id="grading-card">
+      <h2 class="grading-title">
+        <span class="card-icon">📋</span> Grading System
+      </h2>
+      <p class="grading-desc">Grades are mapped to Grade Point Values (GPV) using this university grading system.</p>
+      <div class="grading-table" id="grading-table">
+        <!-- Injected by JS -->
+      </div>
+      <div class="formula-box">
+        <h3>Formula</h3>
+        <p class="formula">GPA = Σ (Credit<sub>i</sub> × GradePoint<sub>i</sub>) / Σ Credit<sub>i</sub></p>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <div class="visitor-counter" id="visitor-counter">
+        <span class="visitor-icon">👁️</span>
+        <span class="visitor-text">Total Visitors: <strong class="visitor-count" id="visitor-count">—</strong></span>
+      </div>
+      <p style="margin-top: 8px; font-size: 0.85rem; color: var(--text-muted); font-weight: 500;">&copy; 2026 Made by THARAKA</p>
+    </footer>
+  </div>
+
+  <script src="/js/auth.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

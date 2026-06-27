@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Login — GPA Calculator</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="bg-orbs" aria-hidden="true">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+    <div class="orb orb-4"></div>
+  </div>
+
+  <div class="container" style="max-width: 500px; padding-top: 100px;">
+    <main class="calculator-card glass-card">
+      <div class="card-header" style="justify-content: center; text-align: center;">
+        <h2 class="card-title" style="font-size: 1.8rem;">
+          <span class="card-icon">👋</span> Welcome Back
+        </h2>
+      </div>
+
+      <p style="text-align: center; color: var(--text-secondary); margin-bottom: 24px;">Login to save your GPA results.</p>
+
+      <form id="login-form">
+        <div style="margin-bottom: 16px;">
+          <label style="display: block; font-size: 0.85rem; margin-bottom: 8px; color: var(--text-muted); font-weight: 600;">USERNAME</label>
+          <input type="text" id="username" class="course-input" placeholder="Enter username" required />
+        </div>
+        <div style="margin-bottom: 24px;">
+          <label style="display: block; font-size: 0.85rem; margin-bottom: 8px; color: var(--text-muted); font-weight: 600;">PASSWORD</label>
+          <input type="password" id="password" class="course-input" placeholder="Enter password" required />
+        </div>
+
+        <button type="submit" class="btn btn-calculate" id="btn-login" style="margin-top: 0;">
+          <span class="btn-label">Login</span>
+          <span class="btn-loader" id="login-loader"></span>
+        </button>
+
+        <div class="error-message" id="auth-error"></div>
+      </form>
+
+      <div style="text-align: center; margin-top: 24px; font-size: 0.9rem;">
+        <span style="color: var(--text-secondary);">Don't have an account?</span> 
+        <a href="/signup.html" style="color: var(--accent-3); text-decoration: none; font-weight: 600;">Sign up</a>
+      </div>
+
+      <div style="text-align: center; margin-top: 24px; font-size: 0.85rem;">
+        <a href="/" class="back-link">
+          <span class="back-arrow">←</span> Back to Home
+        </a>
+      </div>
+    </main>
+  </div>
+
+  <script src="/js/auth.js"></script>
+</body>
+</html>
