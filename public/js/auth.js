@@ -34,7 +34,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 async function handleAuth(url, data, btn, errorEl) {
-  errorEl.style.display = 'none';
+  errorEl.classList.remove('visible');
   btn.classList.add('loading');
   
   try {
@@ -123,7 +123,7 @@ function showSuccessPopup(message, callback) {
 
 function showError(el, message) {
   el.textContent = message;
-  el.style.display = 'block';
+  el.classList.add('visible');
 }
 
 // Utility for getting auth header
