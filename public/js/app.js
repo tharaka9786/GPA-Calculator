@@ -185,14 +185,17 @@
       row.forEach((cell, index) => {
         if (typeof cell !== 'string') return;
         const lowerCell = cell.toLowerCase().trim();
-        if (lowerCell.includes('code') || lowerCell.includes('unit')) {
-          headerMap.code = index; foundAnyHeader = true;
-        } else if (lowerCell.includes('title') || lowerCell.includes('name') || lowerCell.includes('course')) {
+        
+        if (lowerCell.includes('title') || lowerCell.includes('name')) {
           headerMap.name = index; foundAnyHeader = true;
+        } else if (lowerCell.includes('code') || lowerCell.includes('unit') || lowerCell.includes('subject')) {
+          headerMap.code = index; foundAnyHeader = true;
         } else if (lowerCell.includes('grade')) {
           headerMap.grade = index; foundAnyHeader = true;
         } else if (lowerCell.includes('credit')) {
           headerMap.credits = index; foundAnyHeader = true;
+        } else if (lowerCell === 'course' && headerMap.name === -1) {
+          headerMap.name = index; foundAnyHeader = true;
         }
       });
 
