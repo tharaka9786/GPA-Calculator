@@ -5,10 +5,15 @@ const fs = require('fs');
 const sqlite3 = require('sqlite3').verbose();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const multer = require('multer');
+const Tesseract = require('tesseract.js');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = 'super-secret-gpa-key-change-in-production'; // In real app, use environment variables
+
+// Setup Multer for memory storage
+const upload = multer({ storage: multer.memoryStorage() });
 
 // Middleware
 app.use(cors());
@@ -284,6 +289,34 @@ app.get('/api/my-records', authenticateToken, (req, res) => {
     
     res.json({ success: true, data: records });
   });
+});
+
+// ─── OCR Route ────────────────────────────────────────────────
+/**
+ * POST /api/scan-image
+ * Extracts text from an uploaded image using Tesseract.js on the server.
+ */
+app.post('/api/scan-image', upload.single('image'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ success: false, error: 'No image uploaded' });
+  }
+
+  try {
+    const { data: { text } } = await Tesseract.recognize(
+      req.file.buffer,
+      'eng',
+      {
+        logger: m => {
+          // You could optionally log progress on the server
+          // console.log(m);
+        }
+      }
+    );
+    res.json({ success: true, text });
+  } catch (err) {
+    console.error('OCR Processing Error:', err);
+    res.status(500).json({ success: false, error: 'Failed to process image' });
+  }
 });
 
 // Serve index.html for all other routes
