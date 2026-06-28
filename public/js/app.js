@@ -145,6 +145,7 @@
   }
 
   function processOCRText(text) {
+    console.log("Raw AI Extraction Text:\n", text);
     const lines = text.split('\n');
     let coursesAdded = 0;
 
@@ -159,35 +160,50 @@
     });
 
     for (const line of lines) {
-      // 1. Find Course Code (e.g. COST 11012, LISC 21414)
-      const codeMatch = line.match(/\b([A-Z]{4})\s?(\d{4})(\d)\b/i);
+      // 1. Find Course Code (e.g. COST 11012, LISC 21414, CSC 101)
+      // Allows 2-5 letters, optional space, 3-5 digits.
+      const codeMatch = line.match(/([A-Z]{2,5})\s?(\d{3,5})/i);
       if (!codeMatch) continue;
 
-      const fullCode = `${codeMatch[1].toUpperCase()} ${codeMatch[2]}${codeMatch[3]}`;
-      const credits = codeMatch[3]; // Last digit is always the credits
+      const fullCode = `${codeMatch[1].toUpperCase()} ${codeMatch[2]}`;
+      
+      // Remove the code from the line so we don't accidentally match its digits later
+      let remainingLine = line.replace(codeMatch[0], '');
 
       // 2. Find Grade
-      // Matches A, B+, B Plus, C Minus, etc.
-      const gradeMatch = line.match(/\b(A Plus|A Minus|A\+|A\-|A|B Plus|B Minus|B\+|B\-|B|C Plus|C Minus|C\+|C\-|C|D Plus|D\+|D|E|F)\b/i);
-      if (!gradeMatch) continue;
-
-      let rawGrade = gradeMatch[1].toUpperCase();
-      // Normalize 'Plus' and 'Minus'
-      rawGrade = rawGrade.replace(' PLUS', '+').replace(' MINUS', '-');
-      if (rawGrade === 'F') rawGrade = 'E'; // Standardize F to E
-
-      if (!GRADE_GPV.hasOwnProperty(rawGrade)) continue;
-
-      // 3. Find Course Name
-      const codeIndex = line.indexOf(codeMatch[0]);
-      const gradeIndex = line.indexOf(gradeMatch[0], codeIndex + codeMatch[0].length);
+      // Matches A, B+, B Plus, C Minus, etc., allowing for spaces before +/-
+      const gradeMatch = remainingLine.match(/\b(A\s*Plus|A\s*Minus|A\s*\+|A\s*\-|A|B\s*Plus|B\s*Minus|B\s*\+|B\s*\-|B|C\s*Plus|C\s*Minus|C\s*\+|C\s*\-|C|D\s*Plus|D\s*\+|D|E|F)\b/i);
       
-      let courseName = "";
-      if (gradeIndex > codeIndex) {
-        courseName = line.substring(codeIndex + codeMatch[0].length, gradeIndex).trim();
-        // Clean up common OCR noise
-        courseName = courseName.replace(/[^a-zA-Z0-9\s\-]/g, '').replace(/\s+/g, ' ').trim();
+      let rawGrade = "";
+      if (gradeMatch) {
+        rawGrade = gradeMatch[1].toUpperCase();
+        // Normalize 'Plus', 'Minus', and spaces
+        rawGrade = rawGrade.replace(/\s*PLUS/g, '+').replace(/\s*MINUS/g, '-').replace(/\s+/g, '');
+        if (rawGrade === 'F') rawGrade = 'E'; // Standardize F to E
+        if (!GRADE_GPV.hasOwnProperty(rawGrade)) rawGrade = ""; 
+        
+        // Remove grade from line
+        remainingLine = remainingLine.replace(gradeMatch[0], '');
       }
+
+      // 3. Find Credits
+      // Look for a single digit (1-8) in the remaining line (which often represents the Credits column)
+      let credits = "";
+      const creditMatch = remainingLine.match(/\b([1-8])\b/);
+      if (creditMatch) {
+        credits = creditMatch[1];
+        remainingLine = remainingLine.replace(creditMatch[0], '');
+      } else {
+        // Fallback: Try to use the last digit of the course code (common in Sri Lankan unis like COST 11012 -> 2 credits)
+        credits = codeMatch[2].slice(-1); 
+      }
+
+      // 4. Find Course Name
+      // Whatever is left in the remaining line (mostly letters)
+      let courseName = remainingLine.replace(/[^a-zA-Z\s\-]/g, '').replace(/\s+/g, ' ').trim();
+      
+      // Ignore junk lines like "Course Unit" headers that might have been matched
+      if (courseName.toUpperCase().includes('COURSE UNIT')) continue;
 
       // Add it to the UI
       addCourseRow(false, {
