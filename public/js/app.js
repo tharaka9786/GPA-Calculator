@@ -141,7 +141,7 @@
   }
 
   function processOCRText(text) {
-    const lines = text.split('\\n');
+    const lines = text.split('\n');
     let coursesAdded = 0;
 
     // Clear existing empty rows first
@@ -156,15 +156,15 @@
 
     for (const line of lines) {
       // 1. Find Course Code (e.g. COST 11012, LISC 21414)
-      const codeMatch = line.match(/\\b([A-Z]{4})\\s?(\\d{4})(\\d)\\b/i);
+      const codeMatch = line.match(/\b([A-Z]{4})\s?(\d{4})(\d)\b/i);
       if (!codeMatch) continue;
 
-      const fullCode = \`\${codeMatch[1].toUpperCase()} \${codeMatch[2]}\${codeMatch[3]}\`;
+      const fullCode = `${codeMatch[1].toUpperCase()} ${codeMatch[2]}${codeMatch[3]}`;
       const credits = codeMatch[3]; // Last digit is always the credits
 
       // 2. Find Grade
       // Matches A, B+, B Plus, C Minus, etc.
-      const gradeMatch = line.match(/\\b(A Plus|A Minus|A\\+|A\\-|A|B Plus|B Minus|B\\+|B\\-|B|C Plus|C Minus|C\\+|C\\-|C|D Plus|D\\+|D|E|F)\\b/i);
+      const gradeMatch = line.match(/\b(A Plus|A Minus|A\+|A\-|A|B Plus|B Minus|B\+|B\-|B|C Plus|C Minus|C\+|C\-|C|D Plus|D\+|D|E|F)\b/i);
       if (!gradeMatch) continue;
 
       let rawGrade = gradeMatch[1].toUpperCase();
@@ -182,7 +182,7 @@
       if (gradeIndex > codeIndex) {
         courseName = line.substring(codeIndex + codeMatch[0].length, gradeIndex).trim();
         // Clean up common OCR noise
-        courseName = courseName.replace(/[^a-zA-Z0-9\\s\\-]/g, '').replace(/\\s+/g, ' ').trim();
+        courseName = courseName.replace(/[^a-zA-Z0-9\s\-]/g, '').replace(/\s+/g, ' ').trim();
       }
 
       // Add it to the UI
