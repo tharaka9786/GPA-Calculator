@@ -95,32 +95,64 @@
         resultImageInput.click();
       });
       resultImageInput.addEventListener('change', handleImageScan);
+      
+      // Start downloading AI model in the background immediately
+      initOcrWorker();
     }
   }
 
   // ── OCR Image Processing ─────────────────────────────────
+  let globalOcrWorker = null;
+  let isOcrInitializing = false;
+
+  // Pre-load the AI engine in the background so it's instantly ready
+  async function initOcrWorker() {
+    if (globalOcrWorker || isOcrInitializing) return;
+    isOcrInitializing = true;
+    try {
+      globalOcrWorker = await Tesseract.createWorker({
+        logger: m => {
+          // If the overlay is open, show exactly what the AI is downloading/doing
+          if (!scanOverlay.classList.contains('hidden')) {
+            if (m.status === 'recognizing text') {
+              scanStatus.textContent = "Extracting text... " + Math.round(m.progress * 100) + "%";
+              scanProgressFill.style.width = Math.max(10, m.progress * 100) + "%";
+            } else {
+              // Show downloading statuses (loading core, loading traineddata)
+              scanStatus.textContent = m.status.charAt(0).toUpperCase() + m.status.slice(1) + "...";
+            }
+          }
+        }
+      });
+      await globalOcrWorker.loadLanguage('eng');
+      await globalOcrWorker.initialize('eng');
+      console.log("OCR AI Engine pre-loaded successfully!");
+    } catch (err) {
+      console.error("Failed to pre-load OCR Engine", err);
+    }
+    isOcrInitializing = false;
+  }
+
   async function handleImageScan(event) {
     const file = event.target.files[0];
     if (!file) return;
 
     // Show overlay
     scanOverlay.classList.remove('hidden');
-    scanStatus.textContent = "Loading AI Engine...";
     scanProgressFill.style.width = "10%";
 
     try {
-      const worker = await Tesseract.createWorker({
-        logger: m => {
-          if (m.status === 'recognizing text') {
-            scanStatus.textContent = "Extracting text... " + Math.round(m.progress * 100) + "%";
-            scanProgressFill.style.width = Math.max(10, m.progress * 100) + "%";
-          }
-        }
-      });
-      await worker.loadLanguage('eng');
-      await worker.initialize('eng');
-      const { data: { text } } = await worker.recognize(file);
-      await worker.terminate();
+      // If they clicked before background init finished, wait for it
+      if (!globalOcrWorker) {
+        scanStatus.textContent = "Downloading AI Model (~20MB)...";
+        await initOcrWorker();
+      }
+
+      scanStatus.textContent = "Analyzing Image...";
+      const { data: { text } } = await globalOcrWorker.recognize(file);
+      
+      // Note: We DO NOT terminate the worker here anymore, 
+      // so subsequent scans are blazing fast!
 
       scanStatus.textContent = "Parsing Result Sheet...";
       scanProgressFill.style.width = "100%";
@@ -130,7 +162,7 @@
         processOCRText(text);
         scanOverlay.classList.add('hidden');
         resultImageInput.value = ""; // Reset input
-      }, 800);
+      }, 500);
 
     } catch (err) {
       console.error("OCR Error:", err);
