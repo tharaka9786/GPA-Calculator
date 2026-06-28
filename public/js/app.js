@@ -58,6 +58,13 @@
   
   // Auth Elements
   const authNav = document.getElementById('auth-nav');
+
+  // OCR Elements
+  const btnScanImage = document.getElementById('btn-scan-image');
+  const resultImageInput = document.getElementById('result-image-input');
+  const scanOverlay = document.getElementById('scan-overlay');
+  const scanStatus = document.getElementById('scan-status');
+  const scanProgressFill = document.getElementById('scan-progress-fill');
   const btnSaveResult = document.getElementById('btn-save-result');
   const saveMessage = document.getElementById('save-message');
   let lastCalculatedResult = null;
@@ -81,9 +88,125 @@
     if (btnSaveResult) {
       btnSaveResult.addEventListener('click', handleSaveResult);
     }
+    
+    // OCR Event Listeners
+    if (btnScanImage && resultImageInput) {
+      btnScanImage.addEventListener('click', () => {
+        resultImageInput.click();
+      });
+      resultImageInput.addEventListener('change', handleImageScan);
+    }
   }
 
-  // ── Auth Navigation ──────────────────────────────────────
+  // ── OCR Image Processing ─────────────────────────────────
+  async function handleImageScan(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    // Show overlay
+    scanOverlay.classList.remove('hidden');
+    scanStatus.textContent = "Loading AI Engine...";
+    scanProgressFill.style.width = "10%";
+
+    try {
+      const worker = await Tesseract.createWorker({
+        logger: m => {
+          if (m.status === 'recognizing text') {
+            scanStatus.textContent = "Extracting text... " + Math.round(m.progress * 100) + "%";
+            scanProgressFill.style.width = Math.max(10, m.progress * 100) + "%";
+          }
+        }
+      });
+      await worker.loadLanguage('eng');
+      await worker.initialize('eng');
+      const { data: { text } } = await worker.recognize(file);
+      await worker.terminate();
+
+      scanStatus.textContent = "Parsing Result Sheet...";
+      scanProgressFill.style.width = "100%";
+      
+      // Process Text
+      setTimeout(() => {
+        processOCRText(text);
+        scanOverlay.classList.add('hidden');
+        resultImageInput.value = ""; // Reset input
+      }, 800);
+
+    } catch (err) {
+      console.error("OCR Error:", err);
+      alert("Failed to scan the image. Please try again or enter manually.");
+      scanOverlay.classList.add('hidden');
+      resultImageInput.value = "";
+    }
+  }
+
+  function processOCRText(text) {
+    const lines = text.split('\\n');
+    let coursesAdded = 0;
+
+    // Clear existing empty rows first
+    const existingRows = Array.from(courseRowsContainer.querySelectorAll('.course-row'));
+    existingRows.forEach(row => {
+      const code = row.querySelector('.col-code-input').value.trim();
+      const name = row.querySelector('.col-name-input').value.trim();
+      if (!code && !name) {
+        row.remove();
+      }
+    });
+
+    for (const line of lines) {
+      // 1. Find Course Code (e.g. COST 11012, LISC 21414)
+      const codeMatch = line.match(/\\b([A-Z]{4})\\s?(\\d{4})(\\d)\\b/i);
+      if (!codeMatch) continue;
+
+      const fullCode = \`\${codeMatch[1].toUpperCase()} \${codeMatch[2]}\${codeMatch[3]}\`;
+      const credits = codeMatch[3]; // Last digit is always the credits
+
+      // 2. Find Grade
+      // Matches A, B+, B Plus, C Minus, etc.
+      const gradeMatch = line.match(/\\b(A Plus|A Minus|A\\+|A\\-|A|B Plus|B Minus|B\\+|B\\-|B|C Plus|C Minus|C\\+|C\\-|C|D Plus|D\\+|D|E|F)\\b/i);
+      if (!gradeMatch) continue;
+
+      let rawGrade = gradeMatch[1].toUpperCase();
+      // Normalize 'Plus' and 'Minus'
+      rawGrade = rawGrade.replace(' PLUS', '+').replace(' MINUS', '-');
+      if (rawGrade === 'F') rawGrade = 'E'; // Standardize F to E
+
+      if (!GRADE_GPV.hasOwnProperty(rawGrade)) continue;
+
+      // 3. Find Course Name
+      const codeIndex = line.indexOf(codeMatch[0]);
+      const gradeIndex = line.indexOf(gradeMatch[0], codeIndex + codeMatch[0].length);
+      
+      let courseName = "";
+      if (gradeIndex > codeIndex) {
+        courseName = line.substring(codeIndex + codeMatch[0].length, gradeIndex).trim();
+        // Clean up common OCR noise
+        courseName = courseName.replace(/[^a-zA-Z0-9\\s\\-]/g, '').replace(/\\s+/g, ' ').trim();
+      }
+
+      // Add it to the UI
+      addCourseRow(false, {
+        code: fullCode,
+        name: courseName,
+        grade: rawGrade,
+        credits: credits
+      });
+      coursesAdded++;
+    }
+
+    if (coursesAdded > 0) {
+      // Trigger calculation automatically
+      setTimeout(handleCalculate, 300);
+    } else {
+      alert("No valid courses were detected in the image. Please make sure the image is clear and contains Course Codes and Grades.");
+      // Ensure at least one row exists
+      if (courseRowsContainer.querySelectorAll('.course-row').length === 0) {
+        addCourseRow(false);
+      }
+    }
+  }
+
   function updateAuthNav() {
     if (!authNav) return;
     const token = localStorage.getItem('gpa_token');
@@ -175,13 +298,18 @@
   }
 
   // ── Add Course Row ───────────────────────────────────────
-  function addCourseRow(preventFocus = false) {
+  function addCourseRow(preventFocus = false, initialData = null) {
     courseCounter++;
     const num = courseCounter;
     const row = document.createElement('div');
     row.className = 'course-row';
     row.dataset.id = num;
     row.style.animationDelay = '0s';
+
+    const defaultCode = initialData ? initialData.code : '';
+    const defaultName = initialData ? initialData.name : '';
+    const defaultCredits = initialData ? initialData.credits : '';
+    let gradeHtml = buildGradeOptions();
 
     row.innerHTML = `
       <span class="row-num">${num}</span>
@@ -191,6 +319,7 @@
         placeholder="e.g. LISC 11313"
         id="course-code-${num}"
         aria-label="Course code"
+        value="${escapeHtml(defaultCode)}"
       />
       <input
         type="text"
@@ -198,13 +327,14 @@
         placeholder="Course name"
         id="course-name-${num}"
         aria-label="Course name"
+        value="${escapeHtml(defaultName)}"
       />
       <select
         class="grade-select col-grade-select"
         id="course-grade-${num}"
         aria-label="Grade"
       >
-        ${buildGradeOptions()}
+        ${gradeHtml}
       </select>
       <input
         type="number"
@@ -214,6 +344,7 @@
         max="30"
         id="course-credits-${num}"
         aria-label="Credit hours"
+        value="${defaultCredits}"
       />
       <span class="gpv-display" id="gpv-display-${num}">—</span>
       <button class="btn-delete" title="Remove course" aria-label="Remove course" data-delete="${num}">✕</button>
@@ -221,8 +352,12 @@
 
     courseRowsContainer.appendChild(row);
 
-    // Attach events
     const gradeSelect = row.querySelector('.col-grade-select');
+    if (initialData && initialData.grade) {
+      gradeSelect.value = initialData.grade;
+    }
+    
+    // Attach events
     gradeSelect.addEventListener('change', () => updateGPVDisplay(num));
 
     const creditsInput = row.querySelector('.col-credits-input');
@@ -231,8 +366,12 @@
     const deleteBtn = row.querySelector('.btn-delete');
     deleteBtn.addEventListener('click', () => removeCourseRow(row));
 
+    if (initialData && initialData.grade) {
+      updateGPVDisplay(num);
+    }
+
     // Focus the code input if not prevented
-    if (!preventFocus) {
+    if (!preventFocus && !initialData) {
       const codeInput = row.querySelector('.col-code-input');
       if (codeInput) codeInput.focus();
     }

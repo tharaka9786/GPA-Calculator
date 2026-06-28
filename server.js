@@ -15,15 +15,19 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ─── Database Setup (SQLite) ──────────────────────────────────
-const dataDir = path.join(__dirname, 'data');
+// ─── Database Setup ─────────────────────────────────────────────
+const dataDir = process.env.DATABASE_DIR || path.join(__dirname, 'data');
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }
+
 const dbPath = path.join(dataDir, 'database.sqlite');
 const db = new sqlite3.Database(dbPath, (err) => {
-  if (err) console.error('Error opening database:', err);
-  else console.log('Connected to SQLite database.');
+  if (err) {
+    console.error('Error opening database:', err.message);
+  } else {
+    console.log('Connected to SQLite database at', dbPath);
+  }
 });
 
 // Initialize Tables
@@ -288,6 +292,6 @@ app.get('*', (req, res) => {
 });
 
 // ─── Start Server ─────────────────────────────────────────────
-app.listen(PORT, () => {
-  console.log(`\n🎓 GPA Calculator server running at http://localhost:${PORT}\n`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`\n🎓 GPA Calculator server running at http://0.0.0.0:${PORT}\n`);
 });
