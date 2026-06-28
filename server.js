@@ -121,11 +121,10 @@ const GRADE_MAP = {
 const VALID_GRADES = Object.keys(GRADE_MAP);
 
 function getClassification(gpa) {
-  if (gpa >= 3.70) return 'First Class Honours';
-  if (gpa >= 3.30) return 'Second Class Upper Division';
-  if (gpa >= 2.70) return 'Second Class Lower Division';
-  if (gpa >= 2.00) return 'Third Class';
-  if (gpa >= 1.00) return 'Pass';
+  if (gpa >= 3.70) return 'First Class';
+  if (gpa >= 3.30) return 'Second Class (Upper Division)';
+  if (gpa >= 3.00) return 'Second Class (Lower Division)';
+  if (gpa >= 2.00) return 'Pass';
   return 'Fail';
 }
 
