@@ -39,9 +39,9 @@
           <span class="card-icon">📚</span> Your Courses
         </h2>
         <div class="header-actions" style="display: flex; gap: 10px;">
-          <input type="file" id="result-image-input" accept="image/*" style="display: none;" />
-          <button class="btn btn-scan" id="btn-scan-image" type="button">
-            <span class="btn-icon">📷</span> Scan Image
+          <input type="file" id="result-excel-input" accept=".xlsx, .xls, .csv" style="display: none;" />
+          <button class="btn btn-scan" id="btn-upload-excel" type="button">
+            <span class="btn-icon">📊</span> Upload Excel
           </button>
           <button class="btn btn-add" id="btn-add-course" type="button">
             <span class="btn-icon">+</span> Add Course
@@ -142,8 +142,8 @@
       <div class="scan-radar">
         <div class="scan-line"></div>
       </div>
-      <h3 class="scan-title">Scanning Result Sheet...</h3>
-      <p class="scan-status" id="scan-status">Initializing AI Engine</p>
+      <h3 class="scan-title">Reading Excel File...</h3>
+      <p class="scan-status" id="scan-status">Extracting Data</p>
       <div class="scan-progress-bar">
         <div class="scan-progress-fill" id="scan-progress-fill"></div>
       </div>

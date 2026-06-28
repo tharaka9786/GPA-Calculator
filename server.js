@@ -6,7 +6,7 @@ const sqlite3 = require('sqlite3').verbose();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
-const Tesseract = require('tesseract.js');
+const xlsx = require('xlsx');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -291,29 +291,31 @@ app.get('/api/my-records', authenticateToken, (req, res) => {
   });
 });
 
-// ─── OCR Route ────────────────────────────────────────────────
+// ─── Excel Upload Route ────────────────────────────────────────
 /**
- * POST /api/scan-image
- * Extracts text from an uploaded image using Tesseract.js on the server.
+ * POST /api/upload-excel
+ * Reads an uploaded Excel file and returns its rows as a JSON array.
  */
-app.post('/api/scan-image', upload.single('image'), async (req, res) => {
+app.post('/api/upload-excel', upload.single('excel'), (req, res) => {
   if (!req.file) {
-    return res.status(400).json({ success: false, error: 'No image uploaded' });
+    return res.status(400).json({ success: false, error: 'No file uploaded' });
   }
 
   try {
-    const worker = await Tesseract.createWorker('eng');
-    await worker.setParameters({
-      tessedit_pageseg_mode: '6', // Assume a single uniform block of text (ideal for tables)
-      preserve_interword_spaces: '1' // Helps maintain horizontal alignment
-    });
-    const { data: { text } } = await worker.recognize(req.file.buffer);
-    await worker.terminate();
+    // Read the buffer using xlsx
+    const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
     
-    res.json({ success: true, text });
+    // Get the first worksheet
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    
+    // Convert to 2D array of rows
+    const data = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
+    
+    res.json({ success: true, data });
   } catch (err) {
-    console.error('OCR Processing Error:', err);
-    res.status(500).json({ success: false, error: 'Failed to process image' });
+    console.error('Excel Processing Error:', err);
+    res.status(500).json({ success: false, error: 'Failed to process Excel file' });
   }
 });
 

@@ -89,33 +89,36 @@
       btnSaveResult.addEventListener('click', handleSaveResult);
     }
     
-    // OCR Event Listeners
-    if (btnScanImage && resultImageInput) {
-      btnScanImage.addEventListener('click', () => {
-        resultImageInput.click();
+    const btnUploadExcel = document.getElementById('btn-upload-excel');
+    const resultExcelInput = document.getElementById('result-excel-input');
+
+    // Excel Upload Event Listeners
+    if (btnUploadExcel && resultExcelInput) {
+      btnUploadExcel.addEventListener('click', () => {
+        resultExcelInput.click();
       });
-      resultImageInput.addEventListener('change', handleImageScan);
+      resultExcelInput.addEventListener('change', handleExcelUpload);
     }
   }
 
-  // ── OCR Image Processing (Server-Side) ───────────────────
-  async function handleImageScan(event) {
+  // ── Excel Processing ─────────────────────────────────────
+  async function handleExcelUpload(event) {
     const file = event.target.files[0];
     if (!file) return;
 
     // Show overlay
     scanOverlay.classList.remove('hidden');
-    scanStatus.textContent = "Uploading Image to Server...";
+    scanStatus.textContent = "Uploading Excel to Server...";
     scanProgressFill.style.width = "30%";
 
     try {
       const formData = new FormData();
-      formData.append('image', file);
+      formData.append('excel', file);
 
-      scanStatus.textContent = "Processing on Cloud AI...";
+      scanStatus.textContent = "Parsing Excel Data...";
       scanProgressFill.style.width = "70%";
 
-      const response = await fetch('/api/scan-image', {
+      const response = await fetch('/api/upload-excel', {
         method: 'POST',
         body: formData
       });
@@ -123,30 +126,33 @@
       const result = await response.json();
 
       if (!result.success) {
-        throw new Error(result.error || "Failed to scan image");
+        throw new Error(result.error || "Failed to upload Excel file");
       }
 
-      scanStatus.textContent = "Parsing Result Sheet...";
+      scanStatus.textContent = "Populating Courses...";
       scanProgressFill.style.width = "100%";
       
-      // Process Text
+      // Process Data
       setTimeout(() => {
-        processOCRText(result.text);
+        processExcelData(result.data);
         scanOverlay.classList.add('hidden');
-        resultImageInput.value = ""; // Reset input
+        event.target.value = ""; // Reset input
       }, 500);
 
     } catch (err) {
-      console.error("OCR Error:", err);
-      alert("Failed to scan the image on the server. Please try again or enter manually.");
+      console.error("Excel Error:", err);
+      alert("Failed to read the Excel file. Please try again.");
       scanOverlay.classList.add('hidden');
-      resultImageInput.value = "";
+      event.target.value = "";
     }
   }
 
-  function processOCRText(text) {
-    console.log("Raw AI Extraction Text:\n", text);
-    const lines = text.split('\n');
+  function processExcelData(rows) {
+    if (!rows || rows.length === 0) {
+      alert("The uploaded Excel file appears to be empty.");
+      return;
+    }
+
     let coursesAdded = 0;
 
     // Clear existing empty rows first
@@ -159,58 +165,72 @@
       }
     });
 
-    for (const line of lines) {
-      // 1. Find Course Code (e.g. COST 11012, LISC 21414, CSC 101)
-      // Allows 2-5 letters, optional space, 3-5 digits.
-      const codeMatch = line.match(/([A-Z]{2,5})\s?(\d{3,5})/i);
-      if (!codeMatch) continue;
+    // Strategy: Look through the rows to find column indices for Code, Name, Grade, Credits.
+    // We can do a fuzzy match on the first few rows to find the headers.
+    let headerMap = {
+      code: -1,
+      name: -1,
+      grade: -1,
+      credits: -1
+    };
 
-      const fullCode = `${codeMatch[1].toUpperCase()} ${codeMatch[2]}`;
-      
-      // Remove the code from the line so we don't accidentally match its digits later
-      let remainingLine = line.replace(codeMatch[0], '');
+    let dataStartIndex = 0;
 
-      // 2. Find Grade
-      // Matches A, B+, B Plus, C Minus, etc., allowing for spaces before +/-
-      const gradeMatch = remainingLine.match(/\b(A\s*Plus|A\s*Minus|A\s*\+|A\s*\-|A|B\s*Plus|B\s*Minus|B\s*\+|B\s*\-|B|C\s*Plus|C\s*Minus|C\s*\+|C\s*\-|C|D\s*Plus|D\s*\+|D|E|F)\b/i);
-      
-      let rawGrade = "";
-      if (gradeMatch) {
-        rawGrade = gradeMatch[1].toUpperCase();
-        // Normalize 'Plus', 'Minus', and spaces
-        rawGrade = rawGrade.replace(/\s*PLUS/g, '+').replace(/\s*MINUS/g, '-').replace(/\s+/g, '');
-        if (rawGrade === 'F') rawGrade = 'E'; // Standardize F to E
-        if (!GRADE_GPV.hasOwnProperty(rawGrade)) rawGrade = ""; 
-        
-        // Remove grade from line
-        remainingLine = remainingLine.replace(gradeMatch[0], '');
+    // Find Headers
+    for (let i = 0; i < Math.min(10, rows.length); i++) {
+      const row = rows[i];
+      if (!row || !Array.isArray(row)) continue;
+
+      let foundAnyHeader = false;
+      row.forEach((cell, index) => {
+        if (typeof cell !== 'string') return;
+        const lowerCell = cell.toLowerCase().trim();
+        if (lowerCell.includes('code') || lowerCell.includes('unit')) {
+          headerMap.code = index; foundAnyHeader = true;
+        } else if (lowerCell.includes('title') || lowerCell.includes('name') || lowerCell.includes('course')) {
+          headerMap.name = index; foundAnyHeader = true;
+        } else if (lowerCell.includes('grade')) {
+          headerMap.grade = index; foundAnyHeader = true;
+        } else if (lowerCell.includes('credit')) {
+          headerMap.credits = index; foundAnyHeader = true;
+        }
+      });
+
+      if (foundAnyHeader) {
+        dataStartIndex = i + 1;
+        break;
       }
+    }
 
-      // 3. Find Credits
-      // Look for a single digit (1-8) in the remaining line (which often represents the Credits column)
-      let credits = "";
-      const creditMatch = remainingLine.match(/\b([1-8])\b/);
-      if (creditMatch) {
-        credits = creditMatch[1];
-        remainingLine = remainingLine.replace(creditMatch[0], '');
-      } else {
-        // Fallback: Try to use the last digit of the course code (common in Sri Lankan unis like COST 11012 -> 2 credits)
-        credits = codeMatch[2].slice(-1); 
-      }
+    // If we couldn't find explicit headers, assume a standard order: [Code, Name, Grade, Credits]
+    if (headerMap.code === -1 && headerMap.grade === -1) {
+      headerMap = { code: 0, name: 1, grade: 2, credits: 3 };
+    }
 
-      // 4. Find Course Name
-      // Whatever is left in the remaining line (mostly letters)
-      let courseName = remainingLine.replace(/[^a-zA-Z\s\-]/g, '').replace(/\s+/g, ' ').trim();
-      
-      // Ignore junk lines like "Course Unit" headers that might have been matched
-      if (courseName.toUpperCase().includes('COURSE UNIT')) continue;
+    // Process rows
+    for (let i = dataStartIndex; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row || !Array.isArray(row) || row.length === 0) continue;
+
+      let rawCode = (row[headerMap.code] || "").toString().trim();
+      let rawName = (row[headerMap.name] || "").toString().trim();
+      let rawGrade = (row[headerMap.grade] || "").toString().trim().toUpperCase();
+      let rawCredits = (row[headerMap.credits] || "").toString().trim();
+
+      // Skip empty rows
+      if (!rawCode && !rawName) continue;
+
+      // Normalize Grade
+      rawGrade = rawGrade.replace(/\s*PLUS/i, '+').replace(/\s*MINUS/i, '-').replace(/\s+/g, '');
+      if (rawGrade === 'F') rawGrade = 'E';
+      if (!GRADE_GPV.hasOwnProperty(rawGrade)) rawGrade = "";
 
       // Add it to the UI
       addCourseRow(false, {
-        code: fullCode,
-        name: courseName,
+        code: rawCode,
+        name: rawName,
         grade: rawGrade,
-        credits: credits
+        credits: rawCredits
       });
       coursesAdded++;
     }
@@ -219,8 +239,7 @@
       // Trigger calculation automatically
       setTimeout(handleCalculate, 300);
     } else {
-      alert("No valid courses were detected in the image. Please make sure the image is clear and contains Course Codes and Grades.");
-      // Ensure at least one row exists
+      alert("No valid courses were detected in the Excel file. Please ensure it has columns for Code, Title, Grade, and Credits.");
       if (courseRowsContainer.querySelectorAll('.course-row').length === 0) {
         addCourseRow(false);
       }
