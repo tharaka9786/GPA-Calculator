@@ -224,9 +224,16 @@
       if (!rawCode && !rawName) continue;
 
       // Normalize Grade
+      const originalGrade = rawGrade;
       rawGrade = rawGrade.replace(/\s*PLUS/i, '+').replace(/\s*MINUS/i, '-').replace(/\s+/g, '');
       if (rawGrade === 'F') rawGrade = 'E';
-      if (!GRADE_GPV.hasOwnProperty(rawGrade)) rawGrade = "";
+      
+      const pendingKeywords = ['PENDING', 'AB', 'MEDICAL', 'MC', 'REPEAT', 'ABSENT'];
+      if (pendingKeywords.some(kw => originalGrade.includes(kw))) {
+        rawGrade = 'Pending';
+      } else if (!GRADE_GPV.hasOwnProperty(rawGrade)) {
+        rawGrade = "";
+      }
 
       // Add it to the UI
       addCourseRow(false, {
@@ -597,6 +604,9 @@
           btnSaveResult.classList.remove('hidden');
           if (saveMessage) saveMessage.textContent = '';
         }
+
+        // Trigger AI Advisor
+        fetchAIAdvice(data.data);
       }
     } catch (err) {
       console.error('Fetch error:', err);
@@ -604,6 +614,44 @@
     } finally {
       btnCalculate.classList.remove('loading');
       btnCalculate.disabled = false;
+    }
+  }
+
+  // ── AI Advisor Fetch ─────────────────────────────────────
+  async function fetchAIAdvice(data) {
+    const advisorBox = document.getElementById('ai-advisor-box');
+    const advisorContent = document.getElementById('ai-advisor-content');
+    
+    advisorBox.classList.remove('hidden');
+    advisorContent.innerHTML = `
+      <div style="display: flex; align-items: center; gap: 10px; color: var(--accent-2);">
+        <span class="btn-loader" style="display: inline-block; border-color: rgba(0, 206, 201, 0.3); border-top-color: var(--accent-2);"></span> 
+        <span class="ai-typing">Analyzing your GPA and formulating a strategy...</span>
+      </div>
+    `;
+
+    try {
+      const response = await fetch('/api/gpa-advisor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+
+      const resData = await response.json();
+      if (!resData.success) {
+        throw new Error('Failed to load AI advice');
+      }
+
+      // Convert basic markdown to HTML for display
+      let htmlContent = escapeHtml(resData.advice)
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em>$1</em>')
+        .replace(/\n/g, '<br/>');
+
+      advisorContent.innerHTML = `<div style="animation: fade-in 0.5s ease-out;">${htmlContent}</div>`;
+    } catch (err) {
+      console.error(err);
+      advisorContent.innerHTML = `<span style="color: var(--grade-d);">⚠️ AI Advisor is temporarily unavailable. Please try again later.</span>`;
     }
   }
 

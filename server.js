@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -7,9 +8,13 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const xlsx = require('xlsx');
+const { GoogleGenAI } = require('@google/genai');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// ─── Gemini Client Setup ──────────────────────────────────────
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 const JWT_SECRET = 'super-secret-gpa-key-change-in-production'; // In real app, use environment variables
 
 // Setup Multer for memory storage
@@ -321,6 +326,53 @@ app.post('/api/upload-excel', upload.single('excel'), (req, res) => {
 // Serve index.html for all other routes
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+/**
+ * POST /api/gpa-advisor
+ */
+app.post('/api/gpa-advisor', async (req, res) => {
+  try {
+    const { gpa, courses, classification } = req.body;
+    
+    let prompt = `You are a highly encouraging, friendly, and expert university academic advisor at the University of Kelaniya.
+You are analyzing a student's current GPA and course results to provide personalized advice.
+The response MUST be written beautifully in the SINHALA language.
+Use markdown to make the response highly attractive (bolding, lists, emojis).
+
+Current GPA: ${gpa}
+Classification: ${classification}
+
+`;
+    
+    const pendingCourses = courses.filter(c => c.isPending);
+    
+    if (gpa < 4.0) {
+      prompt += `The student has a GPA of ${gpa} and wants to increase it towards 4.0 or at least improve their class. Give them a strategic plan on how many credits of 'A' or 'A+' they might need, or general advice on focusing on high-credit subjects.\n`;
+    } else {
+      prompt += `The student has a perfect 4.0 GPA! Congratulate them warmly and advise them to maintain this excellence.\n`;
+    }
+
+    if (pendingCourses.length > 0) {
+      prompt += `\nThe student has the following Pending/Absent/Medical/Repeat subjects:\n`;
+      pendingCourses.forEach(c => {
+        prompt += `- ${c.courseCode} ${c.courseName} (${c.credits} Credits)\n`;
+      });
+      prompt += `Explain exactly what grade they should target for these specific subjects when they sit for the exams to maximize their GPA.\n`;
+    }
+
+    prompt += `\nKeep the tone professional yet very supportive and engaging. Provide actionable steps. Do NOT output english text, everything must be in native Sinhala (you can use english letters for course codes/grades like 'A', 'B+', 'COST 11012').`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+    });
+
+    res.json({ success: true, advice: response.text });
+  } catch (err) {
+    console.error('Gemini Error:', err);
+    res.status(500).json({ success: false, error: 'Failed to generate AI advice.' });
+  }
 });
 
 // ─── Start Server ─────────────────────────────────────────────
