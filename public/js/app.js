@@ -357,15 +357,15 @@
         class="course-input col-code-input"
         placeholder="e.g. LISC 11313"
         id="course-code-${num}"
-        aria-label="Course code"
+        aria-label="Course Unit"
         value="${escapeHtml(defaultCode)}"
       />
       <input
         type="text"
         class="course-input col-name-input"
-        placeholder="Course name"
+        placeholder="Course Unit Title"
         id="course-name-${num}"
-        aria-label="Course name"
+        aria-label="Course Unit Title"
         value="${escapeHtml(defaultName)}"
       />
       <select
