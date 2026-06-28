@@ -3,7 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
-const sqlite3 = require('sqlite3').verbose();
+const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
@@ -26,56 +26,75 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── Database Setup ─────────────────────────────────────────────
-const dataDir = process.env.DATABASE_DIR || path.join(__dirname, 'data');
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
-}
+let pool;
+let isDbConnected = false;
 
-const dbPath = path.join(dataDir, 'database.sqlite');
-const db = new sqlite3.Database(dbPath, (err) => {
-  if (err) {
-    console.error('Error opening database:', err.message);
-  } else {
-    console.log('Connected to SQLite database at', dbPath);
-  }
-});
+// Retrieve Postgres URL from environment (Neon standard connection string)
+const dbUrl = process.env.POSTGRES_URL;
 
-// Initialize Tables
-db.serialize(() => {
-  db.run(`
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT UNIQUE NOT NULL,
-      email TEXT UNIQUE,
-      password_hash TEXT NOT NULL
-    )
-  `);
-
-  // Attempt to add email column if it doesn't exist (for backward compatibility)
-  db.run("ALTER TABLE users ADD COLUMN email TEXT", (err) => {
-    if (err) console.log("Note: email column already exists or error:", err.message);
+if (dbUrl) {
+  pool = new Pool({
+    connectionString: dbUrl,
+    ssl: { rejectUnauthorized: false }
   });
 
-  db.run(`
-    CREATE TABLE IF NOT EXISTS gpa_records (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      courses_data TEXT NOT NULL,
-      gpa REAL NOT NULL,
-      classification TEXT NOT NULL,
-      total_credits INTEGER NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(user_id) REFERENCES users(id)
-    )
-  `);
+  pool.on('connect', () => {
+    isDbConnected = true;
+  });
+} else {
+  console.warn('\n⚠️ WARNING: POSTGRES_URL is not set in your .env file!');
+  console.warn('The application is running in "No Database" mode. Visitor counts and login will fail.');
+  console.warn('If you are running locally, copy the POSTGRES_URL from your Vercel database and paste it into your .env file.\n');
+}
 
-  db.run(`
-    CREATE TABLE IF NOT EXISTS visitors (
-      visitor_id TEXT PRIMARY KEY,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-});
+// Initialize Tables
+let dbInitPromise = null;
+const initDB = () => {
+  if (!pool) return Promise.resolve();
+  if (!dbInitPromise) {
+    dbInitPromise = (async () => {
+      try {
+        await pool.query(`
+          CREATE TABLE IF NOT EXISTS users (
+            id SERIAL PRIMARY KEY,
+            username TEXT UNIQUE NOT NULL,
+            email TEXT UNIQUE,
+            password_hash TEXT NOT NULL
+          )
+        `);
+
+        try {
+          await pool.query("ALTER TABLE users ADD COLUMN email TEXT");
+        } catch (err) {
+          if (err.code !== '42701') console.log("Note: email column error:", err.message);
+        }
+
+        await pool.query(`
+          CREATE TABLE IF NOT EXISTS gpa_records (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            courses_data TEXT NOT NULL,
+            gpa REAL NOT NULL,
+            classification TEXT NOT NULL,
+            total_credits INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+          )
+        `);
+
+        await pool.query(`
+          CREATE TABLE IF NOT EXISTS visitors (
+            visitor_id TEXT PRIMARY KEY,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+      } catch (err) {
+        console.error('Database initialization error:', err);
+      }
+    })();
+  }
+  return dbInitPromise;
+};
 
 // ─── Auth Middleware ──────────────────────────────────────────
 function authenticateToken(req, res, next) {
@@ -92,29 +111,25 @@ function authenticateToken(req, res, next) {
 }
 
 // ─── Visitor Counter (Database Backed) ────────────────────────
-app.post('/api/visitors', (req, res) => {
+app.post('/api/visitors', async (req, res) => {
+  await initDB();
   const { visitor_id } = req.body;
   
   if (!visitor_id) {
     return res.status(400).json({ success: false, error: 'Visitor ID required' });
   }
 
-  // Insert safely (ignores if exists due to PRIMARY KEY)
-  db.run('INSERT OR IGNORE INTO visitors (visitor_id) VALUES (?)', [visitor_id], (err) => {
-    if (err) {
-      console.error('Error tracking visitor:', err);
-      return res.status(500).json({ success: false, error: 'Database error' });
-    }
+  try {
+    // Insert safely (ignores if exists due to PRIMARY KEY)
+    await pool.query('INSERT INTO visitors (visitor_id) VALUES ($1) ON CONFLICT (visitor_id) DO NOTHING', [visitor_id]);
 
     // Return the total count
-    db.get('SELECT COUNT(*) AS count FROM visitors', [], (err, row) => {
-      if (err) {
-        console.error('Error counting visitors:', err);
-        return res.status(500).json({ success: false, error: 'Database error' });
-      }
-      res.json({ success: true, count: row.count });
-    });
-  });
+    const result = await pool.query('SELECT COUNT(*) AS count FROM visitors');
+    res.json({ success: true, count: result.rows[0].count });
+  } catch (err) {
+    console.error('Error tracking visitor:', err);
+    res.status(500).json({ success: false, error: 'Database error' });
+  }
 });
 
 // ─── Grading Logic ────────────────────────────────────────────
@@ -143,6 +158,7 @@ function normalizeGrade(grade) {
  * POST /api/signup
  */
 app.post('/api/signup', async (req, res) => {
+  await initDB();
   const { username, email, password } = req.body;
   if (!username || !email || !password) return res.status(400).json({ success: false, error: 'Username, email, and password required' });
 
@@ -154,21 +170,21 @@ app.post('/api/signup', async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hash = await bcrypt.hash(password, salt);
 
-    db.run('INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)', [username, email, hash], function(err) {
-      if (err) {
-        if (err.message.includes('UNIQUE constraint failed')) {
-          if (err.message.includes('users.email')) {
-            return res.status(400).json({ success: false, error: 'Email already registered' });
-          }
-          return res.status(400).json({ success: false, error: 'Username already taken' });
-        }
-        return res.status(500).json({ success: false, error: 'Database error' });
-      }
-      
-      const token = jwt.sign({ id: this.lastID, username }, JWT_SECRET, { expiresIn: '7d' });
-      res.json({ success: true, token, username });
-    });
+    const result = await pool.query(
+      'INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3) RETURNING id',
+      [username, email, hash]
+    );
+    
+    const token = jwt.sign({ id: result.rows[0].id, username }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ success: true, token, username });
   } catch (err) {
+    if (err.code === '23505') {
+      if (err.constraint && err.constraint.includes('email')) {
+        return res.status(400).json({ success: false, error: 'Email already registered' });
+      }
+      return res.status(400).json({ success: false, error: 'Username already taken' });
+    }
+    console.error(err);
     res.status(500).json({ success: false, error: 'Server error' });
   }
 });
@@ -176,19 +192,26 @@ app.post('/api/signup', async (req, res) => {
 /**
  * POST /api/login
  */
-app.post('/api/login', (req, res) => {
+app.post('/api/login', async (req, res) => {
+  await initDB();
   const { username, password } = req.body;
   
-  db.get('SELECT * FROM users WHERE username = ?', [username], async (err, user) => {
-    if (err) return res.status(500).json({ success: false, error: 'Database error' });
-    if (!user) return res.status(400).json({ success: false, error: 'Invalid username or password' });
+  try {
+    const result = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
+    if (result.rows.length === 0) {
+      return res.status(400).json({ success: false, error: 'Invalid username or password' });
+    }
 
+    const user = result.rows[0];
     const validPassword = await bcrypt.compare(password, user.password_hash);
     if (!validPassword) return res.status(400).json({ success: false, error: 'Invalid username or password' });
 
     const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ success: true, token, username: user.username });
-  });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, error: 'Database error' });
+  }
 });
 
 /**
@@ -258,41 +281,48 @@ app.post('/api/calculate-gpa', (req, res) => {
  * POST /api/save-gpa
  * Protected route to save a calculated GPA result
  */
-app.post('/api/save-gpa', authenticateToken, (req, res) => {
-  const { gpa, classification, totalCredits, courses } = req.body;
+app.post('/api/save-gpa', authenticateToken, async (req, res) => {
+  await initDB();
+  try {
+    const { gpa, classification, totalCredits, courses } = req.body;
   
-  if (gpa == null || !classification || !courses) {
-    return res.status(400).json({ success: false, error: 'Incomplete data to save' });
-  }
-
-  const coursesJson = JSON.stringify(courses);
-  
-  db.run(
-    'INSERT INTO gpa_records (user_id, courses_data, gpa, classification, total_credits) VALUES (?, ?, ?, ?, ?)',
-    [req.user.id, coursesJson, gpa, classification, totalCredits],
-    function(err) {
-      if (err) return res.status(500).json({ success: false, error: 'Failed to save record' });
-      res.json({ success: true, message: 'Result saved successfully', recordId: this.lastID });
+    if (gpa == null || !classification || !courses) {
+      return res.status(400).json({ success: false, error: 'Incomplete data to save' });
     }
-  );
+
+    const coursesJson = JSON.stringify(courses);
+    
+    const result = await pool.query(
+      'INSERT INTO gpa_records (user_id, courses_data, gpa, classification, total_credits) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+      [req.user.id, coursesJson, gpa, classification, totalCredits]
+    );
+    res.json({ success: true, message: 'Result saved successfully', recordId: result.rows[0].id });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, error: 'Failed to save record' });
+  }
 });
 
 /**
  * GET /api/my-records
  * Protected route to get user's saved records
  */
-app.get('/api/my-records', authenticateToken, (req, res) => {
-  db.all('SELECT * FROM gpa_records WHERE user_id = ? ORDER BY created_at DESC', [req.user.id], (err, rows) => {
-    if (err) return res.status(500).json({ success: false, error: 'Failed to fetch records' });
+app.get('/api/my-records', authenticateToken, async (req, res) => {
+  await initDB();
+  try {
+    const result = await pool.query('SELECT * FROM gpa_records WHERE user_id = $1 ORDER BY created_at DESC', [req.user.id]);
     
     // Parse JSON
-    const records = rows.map(r => ({
+    const records = result.rows.map(r => ({
       ...r,
       courses_data: JSON.parse(r.courses_data)
     }));
     
     res.json({ success: true, data: records });
-  });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, error: 'Failed to fetch records' });
+  }
 });
 
 // ─── Excel Upload Route ────────────────────────────────────────
@@ -375,7 +405,11 @@ Classification: ${classification}
   }
 });
 
-// ─── Start Server ─────────────────────────────────────────────
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n🎓 GPA Calculator server running at http://0.0.0.0:${PORT}\n`);
-});
+// ─── Start Server / Export for Vercel ─────────────────────────
+if (process.env.VERCEL) {
+  module.exports = app;
+} else {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`\n🎓 GPA Calculator server running at http://0.0.0.0:${PORT}\n`);
+  });
+}
