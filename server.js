@@ -302,16 +302,14 @@ app.post('/api/scan-image', upload.single('image'), async (req, res) => {
   }
 
   try {
-    const { data: { text } } = await Tesseract.recognize(
-      req.file.buffer,
-      'eng',
-      {
-        logger: m => {
-          // You could optionally log progress on the server
-          // console.log(m);
-        }
-      }
-    );
+    const worker = await Tesseract.createWorker('eng');
+    await worker.setParameters({
+      tessedit_pageseg_mode: '6', // Assume a single uniform block of text (ideal for tables)
+      preserve_interword_spaces: '1' // Helps maintain horizontal alignment
+    });
+    const { data: { text } } = await worker.recognize(req.file.buffer);
+    await worker.terminate();
+    
     res.json({ success: true, text });
   } catch (err) {
     console.error('OCR Processing Error:', err);
